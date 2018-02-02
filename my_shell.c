@@ -42,12 +42,26 @@ int getUserCommand(char *command){
 	char *lineptr;
 	lineptr = readline("");
 	if (strlen(lineptr) != 0){
-		//printf("len: %d\n", strlen(lineptr));
 		strcpy(command,lineptr);
 		return 1;
 	}
 	else 
 		return 0;
+}
+
+int countArgs(char *command){
+	int i = 0,n = 0;
+	while(i < strlen(command)){
+		if(command[i] == ' ')
+			n++;
+		if(n == 12){
+			printf("Usage: maximum 10 arguments allowed.\n");
+			return 0;
+		}
+		i ++;
+	}
+
+	return 1;
 }
 
 int parseGreater(char *command){
@@ -84,48 +98,6 @@ int parseGreater(char *command){
 				printf("Error duplicating!!\n");
 			//close(fd); // close unnesessary fd
 			printf("fd: %d\n", fd);
-			// Now execute cat command 
-			if (execvp(args[0],args) < 0)
-			{
-				printf("Couldn't execute cat command.\n");
-				exit(0);
-			}
-		}
-		else{
-			wait(NULL); // wait untill child die
-		}
-
-		return 1;
-	}
-}
-
-int parseGreaterGreater(char *command){
-	char *args[2];
-	int i;
-	for (i = 0; i < 2; ++i)
-	{
-		args[i] = strsep(&command,">>");
-		if (args[i] == NULL)
-			break;
-	}
-	if(args[1] == NULL)
-		return 0;
-	else{
-
-		// process >> here
-		pid_t pid;
-		pid = fork();
-		if(pid < 0){
-			printf("Error forking !!\n");
-			return 1;
-		}
-		if (pid == 0)
-		{
-			// First open a file corresponding to args[1]
-			int fd = open(args[1],O_APPEND);
-			printf("fd: %d\n", fd);
-			dup2(fd,1); // STDOUT and fd points to same file now
-			close(fd); // close unnesessary fd
 			// Now execute cat command 
 			if (execvp(args[0],args) < 0)
 			{
@@ -259,6 +231,9 @@ int main(int argc, char const *argv[]){
 		}
 
 		// Parse the entered string to get command and arguments
+		int pf = countArgs(commandString);
+		if(!pf)
+			continue;
 		parseCommand(commandString,parsedArgs);
 		// if(!v)
 		// 	continue;

@@ -1,0 +1,15 @@
+									Flight Reservation System
+
+Flow of the program:
+
+	1. Parent process initializes flights of "NOOFFLIGHTS" with 150 capacity which is a shared memory 
+		a) Shared memory is firest allocated of size "NOOFFLIGHTS*sizeof(int)" .
+		b) Then shared memory is attached with the Address Space of the parent process which gives the pointer to the array of flights.
+		c) I have created shared memory before fork() so that child also get access to same shared memory pointer.
+	2. Then i have created new process using fork() system call which will have multiple threads of execution.
+	3. Created "NOOFTHREADS" no of threads which paralelly executes "doFunction" function. As arguments i am sending shared memory pointer and thread id so that a particular thread can execute a particular query and modify shared memory information(flight information).
+	4. Once thread created , main thread of child process keep on populating a shared table(globaly declared) of size MAX from given .csv file so thath at a time MAX no of query gets executed (i.e MAX no of thread are active at a time).
+	5. For each thread same doFunction method is calling which keep on checking table status and execute proper query if threadId matches and table row becomes valid.
+	6. If threadId matches and corresponding table row(query) is valid then the thread do one of three actions (Inquiry, Book , Cancel) and accordingly modifies the shared memory (flights array).
+	7. To implement mutual exclusion i have used semaphore associated with each element of shared memory array(flights) and also for eache row of shared tabe(globally declared).
+	8. Finaly when all the query is executed the program exit and show final status of the flight.

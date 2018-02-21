@@ -1,0 +1,31 @@
+											Custom Shell
+
+Program flow: 
+
+	1. Getting username using getenv("USER") and printing full path to current directory as ubuntu shows.
+	2. Then taken user command and parsed the command and processed three types of command
+		a) Builtin command
+		b) Simple command without redirection
+		c) Command with redirection both single (>) and double (>>)
+	3. cd implemented with system function chdir("folder name").
+	4. mkdir implemented with system function mkdir("folder name",mode).
+	5. cat implementation
+		a)cat [No argument]
+			-Taking input from stdin and printing on stdout
+		b) cat <filename>
+			-Taking each character from file "filename" and printing on stdout
+		c) cat <filename1><filename2>...<filename9>
+			-Taking characters from each file one by one and printing on stdout
+		d) cat [>] <filename>
+			-Opening file named "filename" as write only and duplicating fd of filename to stdout(1)
+			- Thus what ever we write on terminal also goes to <filename> file.
+		e) cat [>>] <filename>
+			-Similar to previous except we open "filename" file as appendable
+		f) cat <filename1> [>] <filename2>
+			-Taking input from filename1 and puting to filename2 
+		g) cat <filename1> [>>] <filename2>
+			-Similar to previous but data will be appended in filename2
+	6. top implementation
+		- /proc directory oppened
+		- scanned entire directory and opened each folder with interger name and read status file from that folder and printed on the screen
+		- meminfo file opened and printed on screen

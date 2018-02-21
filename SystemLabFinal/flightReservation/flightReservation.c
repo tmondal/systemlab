@@ -8,7 +8,7 @@
 #include  <sys/shm.h>
 #include  <pthread.h>
 #include  <sys/wait.h>
-#include <semaphore.h>
+#include  <semaphore.h>
 
 #define NOOFFLIGHTS 10
 #define NOOFTHREADS 20
@@ -17,13 +17,11 @@
 /*
 * define mutex variable globally
 */
-pthread_mutex_t read_lock[NOOFFLIGHTS];
-pthread_mutex_t write_lock[NOOFFLIGHTS];
+pthread_rwlock_t rwlock[NOOFFLIGHTS];
 
 sem_t sem[MAX];
 int flag = 1;
 
-// pthread_mutex_t mutex_thread;
 typedef struct {
 	int query_time;
 	char query_type[10];
@@ -40,25 +38,40 @@ typedef struct args
 {
 	int *shmptr;
 	int threadId;
-	int bookedStatus[NOOFFLIGHTS];
 }thread_arg;
 
 
 
 void* doUserFunction(void *a){
 
-	//printf("came..\n");
-	int ch,i;
+	int ch,i,no_of_seats;
 	thread_arg *args = (thread_arg *)a;
-	printf("Thread_id: %d\n", args->threadId);
-
+	int bookedStatus[NOOFFLIGHTS] = {0};
+	int min;
 	while(flag){
-		
+
+		/*
+		*If multiple queries exist for a particular user in the table , find minimun query_time query
+		* for the corresponding user and let it execute that query   
+		*/
+		min = 200;
 		for (i = 0; i < MAX; ++i)
 		{
-			if((table[i].valid == 1) && (table[i].thread_no == args->threadId))
+			if (table[i].valid == 1 && (table[i].thread_no == args->threadId))
 			{
-				// Make sure main thread of execution can't modify this(i^th) line now
+				if (table[i].query_time < min)
+				{
+					min = table[i].query_time;
+				}
+			}
+		}
+		for (i = 0; i < MAX; ++i)
+		{
+			if((table[i].valid == 1) && (table[i].thread_no == args->threadId) && min == table[i].query_time)
+			{
+				/*
+				* Make sure main thread of execution can't modify this(i^th) line now
+				*/
 				sem_wait(&sem[i]);
 				/*
 				* Make i^th entry invalid so that new data can be updated by main thread of execution
@@ -73,9 +86,8 @@ void* doUserFunction(void *a){
 					* then fail
 					* else show flight status
 					*/
-					pthread_mutex_lock(&write_lock[table[i].flight_no-1]); // check if any other user already locked to write
-					pthread_mutex_unlock(&write_lock[table[i].flight_no-1]); // if no write lock you unlock since you locked
-					pthread_mutex_lock(&read_lock[table[i].flight_no-1]); // if no write lock then lock as read
+					
+					pthread_rwlock_rdlock(&rwlock[table[i].flight_no-1]);
 
 					printf("------------------------------------------------------------------------\n");
 					printf("|\n");
@@ -84,80 +96,117 @@ void* doUserFunction(void *a){
 					printf("|\n");
 					printf("------------------------------------------------------------------------\n\n");
 
-					pthread_mutex_unlock(&read_lock[table[i].flight_no-1]); // finally unlock the read lock aquired
+					pthread_rwlock_unlock(&rwlock[table[i].flight_no-1]);
 				}
 				else if (strcmp(table[i].query_type,"Book") == 0) 
 				{
+					char permision[10];
+					while(1){
+						/*
+						* First ask current user how many seats to book for specified flight
+						*/
+						printf("Hey user [%d] ! How many seats do you want to book for Flight [%d] : ",table[i].thread_no,table[i].flight_no);
+						scanf("%d",&no_of_seats);
+						table[i].no_of_seats = no_of_seats;
 
-					/*
-					* check if already booked 
-					* check if any other thread is reading(Inquiry) of writing(Book or Cancel)
-					* on the same flight then fail
-					* else do booking but apply limit condition
-					*/
-					pthread_mutex_lock(&write_lock[table[i].flight_no-1]); // check if any other user already locked to write
-					pthread_mutex_lock(&read_lock[table[i].flight_no-1]); // if already read lock
-					pthread_mutex_unlock(&read_lock[table[i].flight_no-1]); // if no read lock the unlock readlock
+						/*
+						* check if any other thread is reading(Inquiry) or writing(Book or Cancel)
+						* on the same flight then fail
+						* else do booking but apply limit condition
+						*/
+						
+						pthread_rwlock_rdlock(&rwlock[table[i].flight_no-1]);
 
-					/*
-					* Check if requested seats are between 2 and 5
-					* If so then check if enough seats available
-					* then book else take appropriate action
-					*/
-					if (table[i].no_of_seats >= 2 && table[i].no_of_seats <= 5)
-					{
-						if (args->shmptr[table[i].flight_no-1] >= table[i].no_of_seats)
+						/*
+						* Check if requested seats are between 2 and 5
+						* If so then check if enough seats available
+						* then book else take appropriate action
+						*/
+						if (table[i].no_of_seats >= 2 && table[i].no_of_seats <= 5)
 						{
-							args->shmptr[table[i].flight_no-1] -= table[i].no_of_seats;
-							args->bookedStatus[table[i].flight_no-1] = 1;
-							printf("\nBooked :: [%d] seats booked on flight no: [%d] by user: [%d]\n",table[i].no_of_seats,table[i].flight_no,table[i].thread_no);
+							if (args->shmptr[table[i].flight_no-1] >= table[i].no_of_seats)
+							{
+								args->shmptr[table[i].flight_no-1] -= table[i].no_of_seats;
+								bookedStatus[table[i].flight_no-1] += table[i].no_of_seats;
+
+								printf("\nBooked :: [%d] seats booked on flight no: [%d] by user: [%d]\n",table[i].no_of_seats,table[i].flight_no,table[i].thread_no);
+								break;
+							}
+							else{
+								printf("\nSorry :: Less than [%d] seats remaining on flight no [%d].\n",table[i].no_of_seats,table[i].flight_no-1);
+								printf("Do you want to book less ? [Y/N] : ");
+								scanf("%s",permision);
+								if (strcmp(permision,"N") == 0 || strcmp(permision,"n") == 0 || strcmp(permision,"No") == 0 || strcmp(permision,"NO") == 0)
+								{
+									break;	
+								}
+							}
 						}
-						else
-							printf("\nSorry :: Less than [%d] seats remaining on flight no [%d].\n",table[i].no_of_seats,table[i].flight_no);
+						else{
+							printf("\nHey user [%d] you can book seats between [2 to 5].\n",table[i].thread_no);
+							printf("Do you want to book less ? [Y/N] : ");
+							scanf("%s",permision);
+							if (strcmp(permision,"N") == 0 || strcmp(permision,"n") == 0 || strcmp(permision,"No") == 0 || strcmp(permision,"NO") == 0)
+							{
+								break;	
+							}
+						}
+
+						pthread_rwlock_unlock(&rwlock[table[i].flight_no-1]);
 					}
-					else{
-						printf("\nThread [%d] can book seats between [2 to 5].\n",table[i].thread_no);
-					}
-					pthread_mutex_unlock(&write_lock[table[i].flight_no-1]); // if no write lock you unlock since you locked
 				}
 				else if (strcmp(table[i].query_type,"Cancel") == 0)
 				{
+					char permision[10];
+					while(1){
+						/*
+						* First ask current user how many seats to cancel for specified flight
+						*/
+						printf("Hey user [%d] ! How many seats do you want to cancel for Flight [%d] : ",table[i].thread_no,table[i].flight_no);
+						scanf("%d",&no_of_seats);
+						table[i].no_of_seats = no_of_seats;
 
-					/*
-					* check if booked atleast a seat on this flight
-					* check if any other thread is reading(Inquiry) of writing(Book or Cancel)
-					* on the same flight then fail
-					* else cancel booking
-					*/	
+						/*
+						* check if booked atleast a seat on this flight
+						* check if any other thread is reading(Inquiry) of writing(Book or Cancel)
+						* on the same flight then fail
+						* else cancel booking
+						*/	
 
-					pthread_mutex_lock(&write_lock[table[i].flight_no-1]); // check if any other user already locked to write
-					pthread_mutex_lock(&read_lock[table[i].flight_no-1]); // if already read lock
-					pthread_mutex_unlock(&read_lock[table[i].flight_no-1]); // if no read lock the unlock readlock
+						pthread_rwlock_rdlock(&rwlock[table[i].flight_no-1]);
 
-					/*
-					* First check if current user booked any seat on the given flight
-					* If booked then check if requested no of seats for cancelling less than no of booked seats
-					* if so then cancel 
-					* else do proper action
-					*/
-					if (args->bookedStatus[table[i].flight_no-1] == 1)
-					{	
-						int bookedseat = 150 - args->shmptr[table[i].flight_no-1];
-						if (bookedseat >= table[i].no_of_seats)
-						{
+						/*
+						* First check if current user booked any seat on the given flight
+						* If booked then check if requested no of seats for cancelling less than no of booked seats
+						* if so then cancel 
+						* else do proper action
+						*/
+						
+						if (bookedStatus[table[i].flight_no-1] >= table[i].no_of_seats)
+						{	
+							
 							args->shmptr[table[i].flight_no-1] += table[i].no_of_seats;
+							bookedStatus[table[i].flight_no-1] -= table[i].no_of_seats;
 							printf("\nCanceled :: [%d] seats canceled from flight no: [%d] by thread: %d\n",table[i].no_of_seats,table[i].flight_no,table[i].thread_no);
+							break;
+
 						}
-						else
-							printf("\nProhibited :: [%d] trying to cancel more than booked from flight [%d]\n", table[i].thread_no,table[i].flight_no);
+						else{
+							printf("\nUser [%d] ! You cann't cancel seats more than you booked on flight [%d].\n",table[i].thread_no,table[i].flight_no);
+							printf("Do you want to cancel less ? [Y/N] : ");
+							scanf("%s",permision);
+							if (strcmp(permision,"N") == 0 || strcmp(permision,"n") == 0 || strcmp(permision,"No") == 0 || strcmp(permision,"NO") == 0)
+							{
+								break;	
+							}
+						}
+						pthread_rwlock_unlock(&rwlock[table[i].flight_no-1]); // if no write lock you unlock since you locked
 					}
-					else
-						printf("\nThread [%d] didn't book any seat on flight [%d].\n",table[i].thread_no,table[i].flight_no);
-					pthread_mutex_unlock(&write_lock[table[i].flight_no-1]); // if no write lock you unlock since you locked
 				}
 				else{
 					printf("Wrong query type.\n");
 				}
+
 				sem_post(&sem[i]);
 			}
 		} // end of for 
@@ -172,14 +221,6 @@ void  main(int  argc, char *argv[])
 	int    shmid,i,j;
 	pid_t  pid;
 	int *shmptr; // capacity of all flights that is shared to all thread
-	/*
-	* Initialize mutexes
-	*/
-	for (i = 0; i < NOOFFLIGHTS; ++i)
-	{
-		pthread_mutex_init(&read_lock[i], NULL);
-		pthread_mutex_init(&write_lock[i], NULL);
-	}
 
 	/*
 	* Initialize valid value
@@ -201,11 +242,11 @@ void  main(int  argc, char *argv[])
 	  printf("*** shmat error (server) ***\n");
 	  exit(1);
 	}
+	printf("Server has attached the shared memory...\n");
 	// Initialize flights with its capacity
 	for (i = 0; i < NOOFFLIGHTS; ++i){
 		shmptr[i] = 150;
 	}
-	printf("Server has attached the shared memory...\n");
 
 	// Creat a new child process
 	printf("Server is about to fork a child process...\n");
@@ -216,15 +257,25 @@ void  main(int  argc, char *argv[])
 	}
 	else if (pid == 0) {
 
+		/*
+		* set counter for how long server to run then shutdown
+		*/
 		time_t start = time(NULL);
 		time_t end = time(NULL);
-		time_t server_life = 1;
 
 		for (i = 0; i < MAX; ++i){
 			sem_init(&sem[i],0,1);
 		}
 
-		// Open given file
+		for (i = 0; i < NOOFFLIGHTS; ++i)
+		{
+			pthread_rwlock_init(&rwlock[i],NULL);
+		}
+
+		/*
+		* Open given file from where maximum 5 entries will be fetched at a time to sharedTable
+		*/
+
 		FILE *fp = fopen("input.txt","r");
 
 		/*
@@ -238,11 +289,7 @@ void  main(int  argc, char *argv[])
 		{
 			arg[i] = (thread_arg *)malloc(sizeof(thread_arg));
 			arg[i]->shmptr = shmptr;
-			arg[i]->threadId = i;
-			for (j = 0; j < NOOFFLIGHTS; ++j)
-			{
-				arg[i]->bookedStatus[j] = 0;
-			}
+			arg[i]->threadId = i+1;
 			user = pthread_create(&users[i], NULL, doUserFunction, arg[i]);
 			if (user){
 	          printf("ERROR: return code from pthread_create() is %d\n", user);
@@ -258,6 +305,10 @@ void  main(int  argc, char *argv[])
 		char qtype[10];
 		int count = 0,i,j;
 		while(flag){
+			if (end - start > 1)
+			{
+				flag = 0;
+			}
 			for (i = 0; i < MAX; ++i)
 			{
 				if (!table[i].valid)
@@ -265,20 +316,20 @@ void  main(int  argc, char *argv[])
 					sem_wait(&sem[i]);
 
 					if(fscanf(fp,"%d %s %d %d",&qtime,qtype,&flight_no,&thread_no) != EOF){
-						if(strcmp(qtype,"Inquiry"))
-							fscanf(fp,"%d",&no_of_seats);
+						// if(strcmp(qtype,"Inquiry"))
+						// 	fscanf(fp,"%d",&no_of_seats);
 						table[i].valid = 1;
 						table[i].query_time = qtime;
 						strcpy(table[i].query_type,qtype);
 						table[i].flight_no = flight_no;
 						table[i].thread_no = thread_no;
-						table[i].no_of_seats = no_of_seats;
 					}
 					else{
-						//flag = 0;
+						sem_post(&sem[i]);
 						break;
 					}
 					sem_post(&sem[i]);
+					
 				}
 			}
 
@@ -293,28 +344,21 @@ void  main(int  argc, char *argv[])
 			}
 			if(j == MAX)
 				flag = 0;
-
-			// printf("diff: %ld\n", end - start);
-			// if(server_life <= (end - start)){
-			// 	flag = 0;
-			// }
-			// end = time(NULL);
-			// if (count >= 10)
-			// {
-			// 	flag = 0;
-			// }
+			end = time(NULL);			
 		}
-		//printf("count :%d\n", count);
+		
 		/*
 		* Wait till threads are complete before main child thread continues.
     	* Unless we wait if we run  exit which will terminate 
     	* the process and all threads before the threads completes execution. 
     	*/
 
+    	for (i = 0; i < NOOFFLIGHTS; ++i)
+    	{
+    		pthread_rwlock_destroy(&rwlock[i]);
+    	}
     	for (i = 0; i < NOOFTHREADS; ++i)
     	{
-    		pthread_mutex_destroy(&read_lock[i]);
-	       	pthread_mutex_destroy(&write_lock[i]);
     		pthread_join(users[i],NULL);
     	}
     	
@@ -323,6 +367,7 @@ void  main(int  argc, char *argv[])
 
 	wait(NULL);
 	printf("Server has detected the completion of its child...\n");
+	printf("\nFinal status of each flight: \n\n");
 	for(i = 0; i < NOOFFLIGHTS; i++){
 		printf("------------------------------------------------------------------------\n");
 		printf("|\n");

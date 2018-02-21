@@ -1,0 +1,9 @@
+										Page Fault Count
+
+Steps followed:
+
+1. Using dd command a file is created.
+2. Then freed pagecache, dentries and inodes (flushing cache) using system command
+3. Then opened the created file using open() function which gives a file_descriptor through which we can access the file content.
+4. We use fstat() functon to get the file size pointed by file_descriptor so that we can bring the file from secondary memory to virtual address space of current process using mmap() function which might cause page fault.
+5. Finally we get resource usage of the calling process by using getrusage() function by putting RUSAGE_SELF as argument and get pagefault.

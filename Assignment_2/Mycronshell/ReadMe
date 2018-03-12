@@ -1,0 +1,8 @@
+
+------------------------------ Cron job scheduler -----------------------------------------
+
+
+1. Main cron process will be run as Daemon which will keep on scanning the crontab in the background.
+2. Once there is a match between current time and specified time the corresponding command will be executed using system command.
+3. Using mycrontab utility user can add , list , remove the crontab job entries.
+4. All the output both command and any error will be send by system function to mycron.log file in home directory.

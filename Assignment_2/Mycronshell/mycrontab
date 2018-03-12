@@ -1,0 +1,29 @@
+#!/bin/bash
+
+# if arg is -l then loop through the file and echo all lines
+# if arg is -e just open the file to any editor and let the user modify
+# if ar is -r then remove the file
+
+# if file is readable i.e -f
+
+if [ -f /home/tanmoy/mycrontab.txt ] 
+then
+	if [[ $1 == "-l" ]]
+	then
+		while read -r line
+		do
+		  echo "$line"
+		done < /home/tanmoy/mycrontab.txt
+		echo "$line"
+	elif [[ $1 == "-e" ]]
+	then
+		subl /home/tanmoy/mycrontab.txt
+	elif [[ $1 == "-r" ]]
+	then
+		echo -n > /home/tanmoy/mycrontab.txt
+	else
+		echo ""
+		echo "Usage: mycrontab [-l/-e/-r]"
+		echo ""
+	fi
+fi

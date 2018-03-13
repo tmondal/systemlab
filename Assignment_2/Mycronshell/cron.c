@@ -70,6 +70,7 @@ int matchWday(int wday, char *time){
 			return 1;
 		if (!strcmp(time,"sat") || !strcmp(time,"Sat") || !strcmp(time,"SAT") && wday == 6)
 			return 1;
+		return 0;
 	}
 }
 
@@ -129,7 +130,7 @@ int match(int sys_time, char *time, int llimit, int ulimit, int flag){
 	}
 
 	/*
-	* If line time field is * that implies always match so return 1
+	* If time field is * that implies always match so return 1
 	*/
 	if (*time == '*')
 		return 1;

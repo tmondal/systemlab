@@ -1,0 +1,7 @@
+
+--------------------------------------- Page Table Simulation -------------------------------------------
+
+Flow: 
+
+1. mmu reads request one at a time  and check in the page table if the requested page is in Main memory
+2. If present page hit increases by one 

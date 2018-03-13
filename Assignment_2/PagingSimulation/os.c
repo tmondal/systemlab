@@ -30,12 +30,16 @@ typedef struct
 int pfhandle = 0;
 int quit = 0;
 int disk_access = 0;
+int fifo = 1;
+int do_now = 0;
+int mmupid;
 
 /*
 * Functions prototype
 */
 void handle_pagefault();
 void handle_quit();
+void handle_int();
 
 void call_fifo(pageTable *shm, FRAME *frame,int i, int noofframes, int noofpages){
 	
@@ -51,7 +55,7 @@ void call_fifo(pageTable *shm, FRAME *frame,int i, int noofframes, int noofpages
 			minindex = k; // victim frame
 		}
 	}
-	printf("Found !! victim frame is : frame[%d] --> pageno[%d]\n",minindex,frame[minindex].assigned_pageno);
+	printf("\nVictim frame using FIFO: %d\n\n",minindex);
 	/*
 	* Replace page 
 	*/
@@ -89,7 +93,7 @@ void call_fifo(pageTable *shm, FRAME *frame,int i, int noofframes, int noofpages
 
 void call_lru(pageTable *shm, FRAME *frame,int new_pno, int noofpages){
 	printf("LRU invoked..\n");
-	printf("New pno: %d\n", new_pno);
+	printf("Requested pno: %d\n", new_pno);
 	int k;
 	/*
 	* Search the page that referenced least recently and valid
@@ -98,7 +102,6 @@ void call_lru(pageTable *shm, FRAME *frame,int new_pno, int noofpages){
 	int minindex;
 	for (k = 0; k < noofpages; ++k)
 	{
-		printf("page[%d] referenced at: %ld validity : %d\n",k, (long)shm[k].last_referenced,shm[k].valid);
 		if (shm[k].last_referenced < min && shm[k].valid)   // last accessed and must be valid
 		{
 			min = shm[k].last_referenced;
@@ -108,7 +111,7 @@ void call_lru(pageTable *shm, FRAME *frame,int new_pno, int noofpages){
 	/*
 	* Replace victim page with requested page 
 	*/
-	printf("Victim page: %d\n", minindex);
+	printf("\nVictim page using LRU: %d\n\n", minindex);
 	if (shm[minindex].dirty)
 	{
 		printf("Writing back to HDD...\n");
@@ -138,7 +141,7 @@ void call_lru(pageTable *shm, FRAME *frame,int new_pno, int noofpages){
 void main(int argc, char const *argv[])
 {
 	int i,pno,fno;
-	int shmid,mmupid;
+	int shmid;
 	pageTable *shm;
 
 	if (argc < 3)
@@ -167,7 +170,7 @@ void main(int argc, char const *argv[])
 	* will get same key if next int (here it is 'x') is same 
 	*/
 
-	key_t key = ftok(".",'x');
+	key_t key = ftok(".",'a');
 	if((shmid = shmget(key,noofpages*sizeof(pageTable),IPC_CREAT | 0666)) < 0){
 		printf("Error creating shared memory..\n");
 		exit(1);
@@ -211,6 +214,10 @@ void main(int argc, char const *argv[])
 		printf("Quit signal error..\n");
 		exit(1);
 	}
+	if(signal(SIGINT,handle_int) == SIG_ERR){
+		printf("Interrupt signal error..\n");
+		exit(1);
+	}
 
 	/*
 	* Service pagefault once get signal from MMU
@@ -251,8 +258,10 @@ void main(int argc, char const *argv[])
 					*/
 					if (fno == noofframes)
 					{
-						call_fifo(shm,frame,pno,noofframes,noofpages);
-						// call_lru(shm,frame,pno,noofpages);
+						if(fifo)
+							call_fifo(shm,frame,pno,noofframes,noofpages);
+						else
+							call_lru(shm,frame,pno,noofpages);
 					}
 
 					/*
@@ -270,10 +279,26 @@ void main(int argc, char const *argv[])
 
 			}
 		}
+		if(do_now){
+			/*
+			* Reinitialize frames for next replacement algorithm
+			*/
+			printf("No of disk access for FIFO: %d\n", disk_access);
+			disk_access = 0;
+			printf("Frames reinitializing..\n");
+			for (i = 0; i < noofframes; ++i)
+			{
+				frame[i].filledAt = time(0);
+				frame[i].assigned_pageno = -1;
+			}
+			printf("Frames reinitialized.\n");
+			kill(mmupid,SIGCONT);
+			do_now = 0;
+		}
 		if (quit)
 			break;
 	}
-	printf("No of disk access: %d\n",disk_access);
+	printf("\nNo of disk access for LRU: %d\n",disk_access);
 	/*
 	* Detach shm and destroy shmid i.e page table
 	*/	
@@ -288,4 +313,10 @@ void handle_pagefault(){
 
 void handle_quit(){
 	quit = 1;
+}
+
+void handle_int(int sig){
+	fifo = 0;
+	do_now = 1;
+	signal(sig,SIG_IGN);
 }
